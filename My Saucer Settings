@@ -1,0 +1,220 @@
+package battle.saucers.controllers;
+
+import au.edu.ecu.is.fuzzy.*;
+import battle.Constants;
+import battle.saucers.Saucer;
+import java.awt.Color;
+import java.util.Random;
+
+/**
+ * A simple controller that uses a little bit of fuzzy reasoning
+ * @author phingstoKyle
+ */
+public class mySaucerController implements SaucerController
+{
+    // This will be the rule set
+    private SugenoRuleSet rules;
+    
+    // These will be the input variables
+    private FuzzyVariable distance;
+    private FuzzyVariable sdirection;
+    private FuzzyVariable energyDifference;
+    private FuzzyVariable firePower;
+    private FuzzyVariable speed;
+    private FuzzyVariable myEnergy;
+    
+    private static final Random random = new Random();
+    private static final String NAME = "myfuzzy";
+    private static  Color BASE = Color.white;
+    private static  Color ARROW = Color.white;
+    private static final double FIRE_PROB = 0.011;
+    private static final double DEF_TURN = 0.0;
+    
+    private double oppDirYay = 0.0;
+    
+    public mySaucerController() throws FuzzyException
+    {
+        //fuzzy variable for distance
+        final double maxDistance =
+                Math.sqrt(Constants.STARFIELD_WIDTH*Constants.STARFIELD_WIDTH+
+                Constants.STARFIELD_HEIGHT*Constants.STARFIELD_HEIGHT);
+        final double distRamp1 = 0.05*maxDistance;
+        final double distRamp2 = 0.2*maxDistance;
+        distance = new FuzzyVariable("distance to target", "m", 0.0, maxDistance, 2);
+        FuzzySet close = new FuzzySet("close", 0.0, 0.0, distRamp1, distRamp2);
+        FuzzySet far = new FuzzySet("far", distRamp1, distRamp2, maxDistance, maxDistance);
+        distance.add(close);
+        distance.add(far);
+        
+       //fuzzy variable for my energy 
+       final double maxEnergy = Saucer.START_ENERGY;
+       final double minEnergy = 0.0;
+       myEnergy = new FuzzyVariable ("my Energy", "J", minEnergy , maxEnergy ,2);
+       FuzzySet lowHealth = new FuzzySet ("lowHealth",minEnergy , minEnergy ,maxEnergy/5 , maxEnergy/4);
+       FuzzySet okHealth = new FuzzySet ("okHealth" , maxEnergy/4,maxEnergy/3,maxEnergy/1.4,maxEnergy/1.4);
+       FuzzySet goodHealth = new FuzzySet ("fullHealth ", maxEnergy/1.4 , maxEnergy/1.4 , maxEnergy , maxEnergy);
+       myEnergy.add(lowHealth);
+       myEnergy.add(okHealth);
+       myEnergy.add(goodHealth);
+        
+        //fuzzy variable for energy difference
+        final double maxDiff = Saucer.START_ENERGY;
+        final double minDiff = -maxDiff;
+        final double diffRamp1 = 0.1*maxDiff;
+        final double diffRamp2 = 0.2*maxDiff;
+        final double diffRamp3 = -0.2*maxDiff;
+        final double diffRamp4 = -0.1*maxDiff;
+        energyDifference = new FuzzyVariable("energy difference", "J", minDiff, maxDiff, 2);
+        FuzzySet losing = new FuzzySet("losing", minDiff, minDiff, diffRamp3, diffRamp4);
+        FuzzySet even = new FuzzySet("even", diffRamp3, 0.0, 0.0, diffRamp2);
+        FuzzySet winning = new FuzzySet("winning", diffRamp1, diffRamp2, maxDiff, maxDiff);
+        energyDifference.add(losing);
+        energyDifference.add(even);
+        energyDifference.add(winning);
+                   
+        //fuzzy variable for speed
+        final double maxSpeed = Saucer.MAX_SPEED;
+        final double midSpeed = maxSpeed *0.6;
+        final double minSpeed = Saucer.MIN_SPEED;
+        speed = new FuzzyVariable("speed","km/h",minSpeed,maxSpeed , 2);
+           
+        //fuzzy variable for fire power
+        final double maxPower = Saucer.MAX_POWER;
+        final double midPower = maxPower/5.0;
+        final double lowPower = maxPower/20.0;
+        firePower = new FuzzyVariable("fire power", "J", -maxPower, maxPower, 2);    
+        
+        //create fuzzy variable for turn
+        final double maxTurn = 360.0;
+        final double minTurn = -360.0;
+        sdirection = new FuzzyVariable("diretion", "degree" , minTurn , maxTurn ,2);       
+    
+       
+        
+// matrix of fuzzy sugeno-type rules
+       rules = new SugenoRuleSet();      
+       //Fuzzy set for firepower
+        FuzzySet[] distanceSets = {close, far};
+        FuzzySet[] diffSets = {losing, even, winning};       
+        double[][] firePowerLevels =
+        {
+            // losing   even     winning
+            {maxPower, maxPower, maxPower}, // close
+            {midPower,      0.0, maxPower}  // far
+        };             
+        rules.addRuleMatrix(
+                distance, distanceSets,
+                energyDifference, diffSets,
+                firePower, firePowerLevels);       
+        rules.displayRuleMatrix(
+                distance, distanceSets,
+                energyDifference, diffSets,
+                firePower);
+       
+        //Fuzzy Set for turning 
+       FuzzySet[] distanceSets2 = {close, far};
+       FuzzySet[] healthSets2 = {lowHealth , okHealth , goodHealth};      
+       double[][] directionChange = 
+       {
+           //low    ok          good
+           {-3   ,DEF_TURN, DEF_TURN},//close
+           {20  ,DEF_TURN , DEF_TURN}  //far       
+       };       
+         rules.addRuleMatrix(
+              distance, distanceSets2,
+              myEnergy ,healthSets2,
+              sdirection,directionChange);        
+        rules.displayRuleMatrix(
+                distance, distanceSets2,
+                myEnergy ,healthSets2,
+                sdirection);
+        
+       //Fuzzy set for speed
+       FuzzySet[] distanceSets3 = {close, far};
+       FuzzySet[] healthSets3 = {lowHealth ,okHealth ,goodHealth};       
+        double[][] speedLevels = 
+        {
+            //lowHealth okHealth goodHealth
+            {maxSpeed ,minSpeed ,minSpeed},//close
+            {minSpeed ,midSpeed ,midSpeed}//far
+        };      
+        rules.addRuleMatrix(
+            distance,distanceSets3,
+            myEnergy,healthSets3,
+            speed,speedLevels);
+        
+       rules.displayRuleMatrix(
+            distance,distanceSets3,
+            myEnergy,healthSets3,
+            speed); 
+    }
+    
+       
+ // Here is where the sensor data comes in
+      public void sensorUpdate
+            (
+            double opponentDistance,
+            double opponentDirection,
+            double opponentEnergy,
+            double energy            
+
+            ) throws FuzzyException
+    {
+        // clear out previous values
+        rules.clearVariables();
+        
+        // Set fuzzy input variable values
+        distance.setValue(opponentDistance);
+        energyDifference.setValue(energy-opponentEnergy);
+        myEnergy.setValue(energy);
+       
+        oppDirYay = opponentDirection;     
+    
+        // fire rules to compute power
+        rules.update();
+    }
+    
+    public double getFirePower() throws Exception
+    {
+        if(Math.random() < FIRE_PROB)
+        {
+            return Saucer.MAX_POWER;
+        }
+       return firePower.getValue();
+    }
+     
+    public double getTurn() throws Exception
+    {     
+         if(Math.random()< 0.03)
+        {
+           return Math.random()*2*3.0;
+        }
+        
+        if (myEnergy.getValue() > 7000) 
+            return oppDirYay;
+        else
+            //System.out.println(sdirection.getValue());
+            return sdirection.getValue();
+    }
+    
+    public double getSpeed() throws Exception
+    {
+         return speed.getValue();
+    }
+    
+    public String getName()
+    {
+        return NAME;
+    }
+    
+    public Color getBaseColor()
+    {
+        return BASE;
+    }
+    
+    public Color getTurretColor()
+    {
+        return ARROW;
+    }
+    
+}
